@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Concoctions</title>
+<style>
+:root{--bg:#faf9f6;--fg:#1c1c1e;--mut:#6b6b70;--card:#fff;--line:#c9c7c0;--btn:#1c1c1e;--btnfg:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17171a;--fg:#f0efeb;--mut:#a0a0a8;--card:#232327;--line:#4a4a52;--btn:#f0efeb;--btnfg:#17171a}}
+:root[data-theme="dark"]{--bg:#17171a;--fg:#f0efeb;--mut:#a0a0a8;--card:#232327;--line:#4a4a52;--btn:#f0efeb;--btnfg:#17171a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;display:flex;flex-direction:column;align-items:center;padding:12px}
+h1{font-size:20px;margin:6px 0}
+button{background:var(--btn);color:var(--btnfg);border:0;border-radius:8px;padding:10px 20px;font-size:15px;font-weight:600;cursor:pointer}
+button.sec{background:transparent;color:var(--fg);border:1px solid var(--line)}
+button:disabled{opacity:.4;cursor:default}
+input,select{font:inherit;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);min-width:0}
+#setup{width:100%;max-width:520px}
+.row{display:flex;gap:8px;margin:6px 0}.row input{flex:1}
+.lbl{font-size:13px;color:var(--mut);margin:14px 0 2px;font-weight:600}
+#err{color:#e5484d;font-size:14px;min-height:20px;margin:8px 0}
+#game{display:none;flex-direction:column;align-items:center;width:100%}
+#board{position:relative;margin:6px auto}
+.ring{position:absolute;border:2px solid var(--line);border-radius:50%}
+.spot,.w{position:absolute;border-radius:8px}
+.spot{border:2px solid rgba(0,0,0,.18);transition:all .4s}
+.w{display:flex;align-items:center;justify-content:center;text-align:center;background:#fff;color:#111;border:1.5px solid rgba(0,0,0,.25);font-weight:700;text-transform:uppercase;line-height:1.05;overflow-wrap:anywhere;padding:2px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;transition:left .45s,top .45s,background .4s}
+.w.drag{transition:none;z-index:9;cursor:grabbing;box-shadow:0 6px 16px rgba(0,0,0,.3)}
+.glabel{position:absolute;text-align:center;font-weight:700;font-size:13px;transform:translate(-50%,-50%);line-height:1.15}
+#dots{display:flex;gap:8px;margin:6px 0;align-items:center;font-size:14px;color:var(--mut)}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--fg)}.dot.off{background:transparent;border:2px solid var(--line)}
+#msg{min-height:22px;font-weight:600;margin:4px 0}
+.btns{display:flex;gap:10px;margin-top:8px}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:20}
+#modal div{background:var(--card);padding:26px 32px;border-radius:14px;text-align:center;max-width:300px}
+#modal p{font-size:22px;font-weight:700;margin:0 0 16px}
+</style></head><body>
+<h1>Concoctions</h1>
+
+<div id="setup" style="display:none">
+  <div class="lbl">Group names (shown only if the player solves it)</div>
+  <div class="row"><input id="gA" placeholder="Group A (Brown, Red, Orange)"></div>
+  <div class="row"><input id="gB" placeholder="Group B (Orange, Yellow, Green)"></div>
+  <div class="row"><input id="gC" placeholder="Group C (Green, Blue, Indigo)"></div>
+  <div class="row"><input id="gD" placeholder="Group D (Indigo, Violet, Brown)"></div>
+  <div class="lbl">12 words and their colors (1 each of Brown/Orange/Green/Indigo, 2 each of Red/Yellow/Blue/Violet)</div>
+  <div id="rows"></div>
+  <div id="err"></div>
+  <button id="go">Submit puzzle</button>
+</div>
+
+<div id="game">
+  <div id="dots"></div>
+  <div id="msg"></div>
+  <div id="board"></div>
+  <div class="btns"><button id="sub">Submit</button><button class="sec" id="copy">Copy puzzle code</button></div>
+</div>
+
+<div id="modal"><div><p id="mt"></p><button id="ok">OK</button></div></div>
+
+<script>
+const COL=[{n:'Brown',h:'#d9bca3'},{n:'Red',h:'#f6aaaa'},{n:'Orange',h:'#fbcb9c'},{n:'Yellow',h:'#f9eaa3'},{n:'Green',h:'#b8e6b3'},{n:'Blue',h:'#adcdf6'},{n:'Indigo',h:'#bcb8f0'},{n:'Violet',h:'#dcbdf1'}];
+const SPOTCOL=[0,1,1,2,3,3,4,5,5,6,7,7];           // color of each circle spot, clockwise from top
+const NEED=[1,2,1,2,1,2,1,2];
+const GSETS=[[0,1,2],[2,3,4],[4,5,6],[6,7,0]];       // colors belonging to groups A,B,C,D
+const WIN=[[0,1,2,3],[3,4,5,6],[6,7,8,9],[9,10,11,0]]; // spots forming each group window
+const EMBED={"w":["Peach","Humble","Mud","Moon","Flash","Streak","Strip","T-Bone","Tomahawk","Skirt","Doll","Broad"],"c":[0,1,1,2,3,3,4,5,5,6,7,7],"n":["Pies","Show Nudity","Steaks","50s Slang for a Woman"]};
+const $=id=>document.getElementById(id);
+let P,place,cell,els,spots,S,W,H,R,over,left,seen,labels=[],showCols=false,wordCol=false,url='',cnt=0;
+
+// ---------- setup ----------
+const rows=$('rows');
+SPOTCOL.forEach((c,i)=>{const r=document.createElement('div');r.className='row';
+  r.innerHTML=`<input placeholder="Word ${i+1}"><select>${COL.map((o,k)=>`<option value="${k}"${k==c?' selected':''}>${o.n}</option>`).join('')}</select>`;rows.appendChild(r)});
+$('go').onclick=()=>{
+  const ins=[...rows.querySelectorAll('input')],sel=[...rows.querySelectorAll('select')];
+  const w=ins.map(i=>i.value.trim()),c=sel.map(s=>+s.value),n=['A','B','C','D'].map(l=>$('g'+l).value.trim());
+  const cc=Array(8).fill(0);c.forEach(x=>cc[x]++);
+  if(w.some(x=>!w)||w.some(x=>!x))return $('err').textContent='Fill in all 12 words.';
+  if(n.some(x=>!x))return $('err').textContent='Fill in all 4 group names.';
+  if(cc.some((x,k)=>x!=NEED[k]))return $('err').textContent='Color counts: 1 each of Brown, Orange, Green, Indigo and 2 each of Red, Yellow, Blue, Violet.';
+  $('err').textContent='';start({w,c,n},true);
+};
+
+// ---------- game ----------
+function start(p,fresh){
+  P=p;
+  url=location.href.split('#')[0]+'#p='+btoa(unescape(encodeURIComponent(JSON.stringify(p))));
+  if(fresh){try{location.hash='p='+url.split('#p=')[1]}catch(e){}}
+  $('setup').style.display='none';$('game').style.display='flex';if(EMBED)$('copy').style.display='none';
+  place=Array(12).fill(-1);cell=[...Array(12).keys()].sort(()=>Math.random()-.5);
+  over=false;left=4;seen=new Set();showCols=true;wordCol=false;
+  build();layout();dots();
+}
+function sets(){return GSETS.map(g=>P.c.map((c,i)=>g.includes(c)?i:-1).filter(i=>i>=0).join())}
+function windows(){const at=[];place.forEach((s,wi)=>at[s]=wi);return WIN.map(w=>w.map(s=>at[s]).sort((a,b)=>a-b).join())}
+function count(){const t=sets();return windows().filter(x=>t.includes(x)).length}
+function build(){
+  const b=$('board');b.innerHTML='';
+  const ring=document.createElement('div');ring.className='ring';b.appendChild(ring);b._ring=ring;
+  spots=SPOTCOL.map(()=>{const d=document.createElement('div');d.className='spot';b.appendChild(d);return d});
+  els=P.w.map((t,i)=>{const d=document.createElement('div');d.className='w';d.textContent=t;b.appendChild(d);drag(d,i);return d});
+  labels=[];
+}
+function spotXY(i){const a=i*Math.PI/6;return[S/2+R*Math.sin(a),S/2-R*Math.cos(a)]}
+function layout(){
+  S=Math.min(560,innerWidth-24);W=S*.15;H=S*.08;R=S*.37;
+  const b=$('board');b.style.width=b.style.height=S+'px';
+  const r=b._ring;r.style.cssText=`left:${S/2-R}px;top:${S/2-R}px;width:${2*R}px;height:${2*R}px`;
+  spots.forEach((d,i)=>{const[x,y]=spotXY(i);d.style.cssText=`left:${x-W/2}px;top:${y-H/2}px;width:${W}px;height:${H}px`;
+    d.style.background=COL[SPOTCOL[i]].h});
+  const cells=[];for(let r=0;r<4;r++)for(let c=0;c<3;c++)cells.push([(c-1)*(W+S*.01),(r-1.5)*(H+S*.01)]);
+  
+  
+  els.forEach((d,i)=>{
+    let x,y;if(place[i]>=0)[x,y]=spotXY(place[i]);else{const k=cell[i];x=S/2+cells[k][0];y=S/2+cells[k][1]}
+    const fs=Math.max(9,S*.03)*(P.w[i].length>10?.8:1);
+    d.style.cssText=`left:${x-W/2}px;top:${y-H/2}px;width:${W}px;height:${H}px;font-size:${fs}px`;
+    if(wordCol){const c=COL[P.c[i]];d.style.background=c.h}
+  });
+}
+addEventListener('resize',()=>{if(P)layout();if(labels.length)drawLabels()});
+function drag(d,i){
+  let ox,oy,fl,ft;
+  d.onpointerdown=e=>{if(over)return;e.preventDefault();d.setPointerCapture(e.pointerId);
+    const br=d.getBoundingClientRect();ox=e.clientX-br.left;oy=e.clientY-br.top;d.classList.add('drag');d._d=1};
+  d.onpointermove=e=>{if(!d._d)return;const r=$('board').getBoundingClientRect();
+    d.style.left=(e.clientX-r.left-ox)+'px';d.style.top=(e.clientY-r.top-oy)+'px'};
+  d.onpointerup=e=>{if(!d._d)return;d._d=0;d.classList.remove('drag');
+    const cx=parseFloat(d.style.left)+W/2,cy=parseFloat(d.style.top)+H/2;
+    let best=-1,bd=1e9;for(let s=0;s<12;s++){const[x,y]=spotXY(s),dd=Math.hypot(x-cx,y-cy);if(dd<bd){bd=dd;best=s}}
+    if(bd<S*.1){const o=place.indexOf(best);if(o>=0&&o!=i){place[o]=-1}place[i]=best}
+    else if(Math.hypot(cx-S/2,cy-S/2)<R-W*.5){place[i]=-1}
+    layout()};
+}
+function dots(){$('dots').innerHTML='Guesses left: '+[0,1,2,3].map(k=>`<span class="dot${k<left?'':' off'}"></span>`).join('')}
+function modal(t){$('mt').textContent=t;$('modal').style.display='flex'}
+$('ok').onclick=()=>$('modal').style.display='none';
+$('copy').onclick=()=>{const j=JSON.stringify(P);try{navigator.clipboard.writeText(j).then(()=>modal('Puzzle code copied. Paste it to Claude to get the player link.')).catch(()=>prompt('Copy this puzzle code',j))}catch(e){prompt('Copy this puzzle code',j)}};
+$('sub').onclick=()=>{
+  if(over)return;
+  if(place.some(s=>s<0))return modal('Place all 12 words on the circle first.');
+  const sig=windows().slice().sort().join('|');
+  if(seen.has(sig))return modal('Already guessed');
+  const n=count();
+  if(n==4){over=true;modal('Correct!');$('msg').textContent='Solved!';wordCol=true;layout();drawLabels();return}
+  seen.add(sig);left--;dots();
+  if(left==0){over=true;modal(n?`Incorrect - ${n} group${n>1?'s':''} correct. Out of guesses.`:'Incorrect. Out of guesses.');
+    $('msg').textContent='Game over. Here is the answer.';reveal();return}
+  modal(n?`Incorrect - ${n} group${n>1?'s':''} correct`:'Incorrect');
+};
+function reveal(){
+  const used={};showCols=true;wordCol=true;
+  P.c.forEach((c,i)=>{const list=[];SPOTCOL.forEach((k,s)=>{if(k==c)list.push(s)});used[c]=used[c]||0;place[i]=list[used[c]++]});
+  layout();
+}
+function drawLabels(){
+  labels.forEach(l=>l.remove());labels=[];
+  const t=sets(),w=windows();
+  WIN.forEach((win,k)=>{const g=t.indexOf(w[k]);if(g<0)return;
+    const a=(win[1]+win[2])/2*Math.PI/6,r=S*.47;
+    const d=document.createElement('div');d.className='glabel';d.textContent=P.n[g];
+    d.style.cssText=`left:${S/2+r*Math.sin(a)}px;top:${S/2-r*Math.cos(a)}px;max-width:${S*.2}px`;
+    $('board').appendChild(d);labels.push(d)});
+}
+
+// ---------- load from link ----------
+(function(){if(EMBED)return start(EMBED,false);const m=location.hash.match(/p=([^&]+)/);if(!m)return;
+  try{start(JSON.parse(decodeURIComponent(escape(atob(m[1])))),false)}catch(e){}})();
+</script></body></html>
